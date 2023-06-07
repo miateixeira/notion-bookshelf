@@ -16,10 +16,16 @@ from selenium.webdriver.support.wait import WebDriverWait
 #  Parameters  #
 ################
 
-SECRET_KEY = ''
-NEW_DATABASE_ID = ''
-OLD_DATABASE_ID = ''
-GOOGLE_API_KEY = ''
+def get_keys(path):
+    with open(path) as f:
+        return json.load(f)
+
+keys = get_keys('~/.secret/keys.json')
+
+SECRET_KEY = keys['NOTION_SECRET_KEY']
+NEW_DATABASE_ID = keys['NOTION_NEW_DATABASE_ID']
+OLD_DATABASE_ID = keys['NOTION_OLD_DATABASE_ID']
+GOOGLE_API_KEY = keys['GOOGLE_API_KEY']
 
 ###################
 #  Notion Client  #
