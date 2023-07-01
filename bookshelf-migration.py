@@ -331,6 +331,9 @@ class PayloadDeployer():
         self.df = df
         self.args = args
 
+        self.convert_type_names = {
+            "Book": "Book"
+        }
         # TODO: Add the other types to this dict
         self.properties_needed_by_type = {
             'Book': [
@@ -342,14 +345,17 @@ class PayloadDeployer():
         }
 
     def transfer_entries(self):
+        """
+        For each entry, create JSON payload and create new page in Notion database,
+        marking the entry as transferred in the old Notion database
+        """
         if self.args.text:
             self.df = self.df.sample(n=1)
 
         for index, row in self.df.iterrows():
-            cover_url = self.get_cover_url(row)
-            properties = self.compile_properties(row, cover_url)
-            
-            response = self.notion_client.create_page(NEW_DATABASE_ID, properties, cover_url)
+            properties = self.compile_properties(row)
+
+            response = self.notion_client.create_page(NEW_DATABASE_ID, properties, row["Cover"])
             if not response.ok:
                 print(response.text)
             else:
@@ -357,11 +363,87 @@ class PayloadDeployer():
 
             self.update_transferred(row["page_id"])
 
-    def get_cover_url(self, entry):
-        continue
+    def compile_properties(self, entry):
+        """
+        Compile the appropriate properties based on the Type of the entry
+        """
+        properties = {}
+        properties['Needs Review'] = { 'checkbox': True } # All items added to new db need to be reviewed
 
-    def compile_properties(self, entry, cover_url):
-        continue
+        for prop in self.properties_needed_by_type[entry["Type"]]:
+            prop_value = self.retrieve_property_value(prop, entry)
+            if prop_value is not None:
+                properties[prop] = prop_value
+        return properties
+
+    def retrieve_property_value(self, prop, entry):
+        """
+        Calls the method that creates the appropriate property object
+        """
+        if prop == "0 Cover":
+            return self.get_cover_property(entry)
+        elif prop == "Title":
+            return self.get_title_property(entry)
+        elif prop == "0 Type":
+            return self.get_type_property(entry)
+        # elif prop == "1 Author(s)":
+        #     return self.get_author_property(entry)
+        # elif prop == "1 Language":
+        #     return self.get_language_property(entry)
+        # elif prop == "1 Genre(s)":
+        #     return self.get_genre_property(entry)
+        # elif prop == "1 Dates read":
+        #     return self.get_dates_property(entry)
+        # elif prop == "1 Rating":
+        #     return self.get_rating_property(entry)
+        # elif prop == "BNG Current page":
+        #     return self.get_current_page_property(entry)
+        # elif prop == "BNG Total pages":
+        #     return self.get_total_pages_property(entry)
+        # elif prop == "BNG Number in series":
+        #     return self.get_number_in_series_property(entry)
+        # elif prop == "BNGISP Publication date":
+        #     return self.get_publication_date_property(entry)
+        # elif prop == "BNGCA Owned":
+        #     return self.get_owned_property(entry)
+        else:
+            print(f'Unsupported property name requested: {prop}')
+            return None
+ 
+    def get_cover_property(self, entry):
+        """
+        Create '0 Cover' property object
+        """
+        if entry["Cover"] is None:
+            return None
+        cover = {
+            'type' : 'files',
+            'files': [{ 'type': 'external', 'name': 'cover', 'external': { 'url': entry["Cover"] } }]
+        }
+        return cover
+
+    def get_title_property(self, entry):
+        """
+        Create 'Title' property object
+        """
+        if entry["Name"] is None:
+            return None
+        title = {
+            'type': 'title',
+            'id': 'title',
+            'title': [{ 'text': { 'content': entry["Name"] } }]
+        }
+        return title
+
+    def get_type_property(self, entry):
+        """
+        Create '0 Type' property object
+        """
+        type_name = convert_type_names.get(entry["Type"])
+        if type_name is None:
+            return None
+        type_property = { 'type': 'select', 'select': { 'name': type_name } }
+        return type_property
 
     def update_transferred(self, page_id):
         """
