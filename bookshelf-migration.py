@@ -364,8 +364,13 @@ class PayloadDeployer():
         continue
 
     def update_transferred(self, page_id):
-        # This should maybe be a method of the Notion client instead?
-        continue
+        """
+        Update the entry in the old database to reflect that it's been transferred
+        """
+        payload = { "properties": { 'Transferred to new db?': { 'checkbox': True } } }
+        data = json.dumps(payload)
+        update_response = self.notion_client.update_page(page_id, data)
+        return update_response
 
 #############################
 #  Putting it all together  #
