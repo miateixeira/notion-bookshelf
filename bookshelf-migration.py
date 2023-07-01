@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 import math
 from datetime import datetime
 import pandas as pd
+import math
 
 ################
 #  Parameters  #
@@ -331,16 +332,29 @@ class PayloadDeployer():
         self.df = df
         self.args = args
 
+        # OLD : NEW
         self.convert_type_names = {
-            "Book": "Book"
+            "Book": "Book", "Novella": "Novella", "Graphic Novel": "Graphic Novel",
+            "Manga": "Manga", "Webcomic": "Webcomic", "Poetry": "Poem",
+            "Short Story": "Short story", "Collection": "Collection"
         }
         # TODO: Add the other types to this dict
+        #   Manga, Webcomic, Poetry, Short Story, Collection
         self.properties_needed_by_type = {
             'Book': [
-                'Title', '0 Type', '0 Cover', '1 Alternate title', '1 Author(s)',
-                '1 Language', '1 Genre(s)', '1 Dates read', '1 Rating',
-                'BNG Current page', 'BNG Total pages', 'BNG Number in series',
-                'BNGISP Publication date', 'BNGCA Owned'
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
+                '1 Dates read', '1 Rating', 'BNG Current page', 'BNG Total pages',
+                'BNG Number in series', 'BNGCA Owned'
+            ],
+            'Novella': [
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
+                '1 Dates read', '1 Rating', 'BNG Current page', 'BNG Total pages',
+                'BNG Number in series', 'BNGCA Owned'
+            ],
+            'Graphic Novel': [
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
+                '1 Dates read', '1 Rating', 'BNG Current page', 'BNG Total pages',
+                'BNG Number in series', 'BNGCA Owned'
             ]
         }
 
@@ -381,69 +395,95 @@ class PayloadDeployer():
         Calls the method that creates the appropriate property object
         """
         if prop == "0 Cover":
-            return self.get_cover_property(entry)
+            return self.create_file_property(entry["Cover"])
         elif prop == "Title":
-            return self.get_title_property(entry)
+            return self.create_title_property(entry["Name"])
         elif prop == "0 Type":
-            return self.get_type_property(entry)
-        # elif prop == "1 Author(s)":
-        #     return self.get_author_property(entry)
-        # elif prop == "1 Language":
-        #     return self.get_language_property(entry)
-        # elif prop == "1 Genre(s)":
-        #     return self.get_genre_property(entry)
-        # elif prop == "1 Dates read":
-        #     return self.get_dates_property(entry)
-        # elif prop == "1 Rating":
-        #     return self.get_rating_property(entry)
-        # elif prop == "BNG Current page":
-        #     return self.get_current_page_property(entry)
-        # elif prop == "BNG Total pages":
-        #     return self.get_total_pages_property(entry)
-        # elif prop == "BNG Number in series":
-        #     return self.get_number_in_series_property(entry)
-        # elif prop == "BNGISP Publication date":
-        #     return self.get_publication_date_property(entry)
-        # elif prop == "BNGCA Owned":
-        #     return self.get_owned_property(entry)
+            return self.create_select_property(self.convert_type_names.get(entry["Type"]))
+        elif prop == "1 Author(s)":
+            return self.create_multiselect_property([a for a in entry["Authors"]])
+        elif prop == "1 Language":
+            return self.create_select_property(entry["Language of original publication"])
+        elif prop == "1 Genre(s)":
+            return self.create_multiselect_property([{'name': g} for g in entry["Genre"]])
+        elif prop == "1 Dates read":
+            start = entry["Start and End"][0] if len(entry["Start and End"]) > 0 else None
+            end = entry["Start and End"][1] if len(entry["Start and End"]) == 2 else None
+            return self.create_date_property(start=start, end=end)
+        elif prop == "1 Rating":
+            return self.create_select_property(entry["Rate"])
+        elif prop == "BNG Current page":
+            return self.create_number_property(entry["Current on"])
+        elif prop == "BNG Total pages":
+            return self.create_number_property(entry["Total Pages"])
+        elif prop == "BNG Number in series":
+            return self.create_number_property(entry["Number in Series"])
+        elif prop == "BNGCA Owned":
+            return self.create_checkbox_property(entry["Owned"])
         else:
             print(f'Unsupported property name requested: {prop}')
             return None
  
-    def get_cover_property(self, entry):
+    def create_file_property(self, file_url):
         """
-        Create '0 Cover' property object
+        Create a file property object
         """
-        if entry["Cover"] is None:
+        if file_url is None:
             return None
-        cover = {
-            'type' : 'files',
-            'files': [{ 'type': 'external', 'name': 'cover', 'external': { 'url': entry["Cover"] } }]
-        }
-        return cover
+        file_property = { 'type': 'files', 'files': [{ 'type': 'external', 'name': 'cover', 'external': { 'url': file_url } }] }
+        return file_property
 
-    def get_title_property(self, entry):
+    def create_title_property(self, title):
         """
         Create 'Title' property object
         """
-        if entry["Name"] is None:
+        if title is None:
             return None
-        title = {
-            'type': 'title',
-            'id': 'title',
-            'title': [{ 'text': { 'content': entry["Name"] } }]
-        }
-        return title
+        title_property = { 'type': 'title', 'id': 'title', 'title': [{ 'text': { 'content': title } }] }
+        return title_property
 
-    def get_type_property(self, entry):
+    def create_select_property(self, select_value):
         """
-        Create '0 Type' property object
+        Create select property object
         """
-        type_name = convert_type_names.get(entry["Type"])
-        if type_name is None:
+        if select_value is None:
             return None
-        type_property = { 'type': 'select', 'select': { 'name': type_name } }
-        return type_property
+        select_property = { 'type': 'select', 'select': { 'name': select_value } }
+        return select_property
+
+    def create_multiselect_property(self, multiselect_values):
+        """
+        Create multi-select property object
+        """
+        if not multiselect_values:
+            return None
+        multiselect_property = { 'type': 'multi_select', 'multi_select': multiselect_values }
+        return multiselect_property
+
+    def create_date_property(self, start=None, end=None):
+        """
+        Create date property object
+        """
+        if start is None and end is None:
+            return None
+        date_property = { 'type': 'date', 'date': { 'start': start, 'end': end } }
+        return date_property
+
+    def create_number_property(self, number_value):
+        """
+        Create number property object
+        """
+        if number_value is None or math.isnan(number_value):
+            return None
+        number_property = { 'type': 'number', 'number': number_value }
+        return number_property
+
+    def create_checkbox_property(self, checkbox_value)
+        """
+        Create checkbox property object
+        """
+        checkbox_property = { 'type': 'checkbox', 'checkbox': checkbox_value }
+        return checkbox_property
 
     def update_transferred(self, page_id):
         """
