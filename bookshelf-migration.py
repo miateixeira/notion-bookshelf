@@ -1,3 +1,4 @@
+import os
 import argparse
 import json
 import requests
@@ -12,7 +13,7 @@ import math
 ################
 
 def get_keys(path):
-    with open(path) as f:
+    with open(os.path.expanduser(path)) as f:
         return json.load(f)
 
 keys = get_keys('~/.secret/keys.json')
@@ -77,14 +78,14 @@ class NotionClient():
         Makes a new page in the indicated Notion database
         """
         page_url = urljoin(self.NOTION_BASE_URL, f"pages/")
-        payload = {
-            "parent": { "database_id": db_id },
-            "icon": {
-                "type": "external",
-                "external": { "url": icon_url }
-            },
-            "properties": properties
-        }
+        if icon_url is None:
+            payload = { "parent": { "database_id": db_id }, "properties": properties }
+        else:
+            payload = {
+                "parent": { "database_id": db_id },
+                "icon": { "type": "external", "external": { "url": icon_url } },
+                "properties": properties
+            }
         data = json.dumps(payload)
         return self.session.post(page_url, data=data)
 
@@ -309,6 +310,7 @@ class PandasLoader():
         records = []
         if db_response.ok:
             db_response_obj = db_response.json()
+            print("Converting response to pandas df")
             records.extend(self.converter.response_to_records(db_response_obj))
 
             while db_response_obj.get("has_more"):
@@ -318,6 +320,7 @@ class PandasLoader():
                 db_response = self.notion_client.query_database(db_id, start_cursor=start_cursor)
                 if db_response.ok:
                     db_response_obj = db_response.json()
+                    print("Converting response to pandas df")
                     records.extend(self.converter.response_to_records(db_response_obj))
 
         return pd.DataFrame(records)
@@ -334,12 +337,10 @@ class PayloadDeployer():
 
         # OLD : NEW
         self.convert_type_names = {
-            "Book": "Book", "Novella": "Novella", "Graphic Novel": "Graphic Novel",
-            "Manga": "Manga", "Webcomic": "Webcomic", "Poetry": "Poem",
-            "Short Story": "Short story", "Collection": "Collection"
+            "Book": "Book", "Novella": "Novella", "Graphic Novel": "Graphic Novel", "Manga": "Manga",
+            "Webcomic": "Webcomic", "Short Story": "Short story", "Collection": "Collection"
         }
-        # TODO: Add the other types to this dict
-        #   Manga, Webcomic, Poetry, Short Story, Collection
+
         self.properties_needed_by_type = {
             'Book': [
                 'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
@@ -355,6 +356,21 @@ class PayloadDeployer():
                 'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
                 '1 Dates read', '1 Rating', 'BNG Current page', 'BNG Total pages',
                 'BNG Number in series', 'BNGCA Owned'
+            ],
+            'Webcomic': [
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
+                '1 Dates read', '1 Rating', 'W Current page', 'W Latest page'
+            ],
+            'Manga': [
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
+                '1 Dates read', '1 Rating', 'M Current chapter', 'M Latest chapter'
+            ],
+            'Short Story': [
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)',
+                '1 Dates read', '1 Rating', 'BNG Number in series', 'SP Read?', 'BNGCA Owned'
+            ],
+            'Collection': [
+                'Title', '0 Type', '0 Cover', '1 Author(s)', '1 Language', '1 Genre(s)'
             ]
         }
 
@@ -363,7 +379,7 @@ class PayloadDeployer():
         For each entry, create JSON payload and create new page in Notion database,
         marking the entry as transferred in the old Notion database
         """
-        if self.args.text:
+        if self.args.test:
             self.df = self.df.sample(n=1)
 
         for index, row in self.df.iterrows():
@@ -374,8 +390,7 @@ class PayloadDeployer():
                 print(response.text)
             else:
                 print("Transfer successful!")
-
-            self.update_transferred(row["page_id"])
+                self.update_transferred(row["page_id"])
 
     def compile_properties(self, entry):
         """
@@ -401,10 +416,12 @@ class PayloadDeployer():
         elif prop == "0 Type":
             return self.create_select_property(self.convert_type_names.get(entry["Type"]))
         elif prop == "1 Author(s)":
-            return self.create_multiselect_property([a for a in entry["Authors"]])
+            return self.create_multiselect_property([{'name': a} for a in entry["Author"]])
         elif prop == "1 Language":
             return self.create_select_property(entry["Language of original publication"])
         elif prop == "1 Genre(s)":
+            if entry["Genre"] is None:
+                return None
             return self.create_multiselect_property([{'name': g} for g in entry["Genre"]])
         elif prop == "1 Dates read":
             start = entry["Start and End"][0] if len(entry["Start and End"]) > 0 else None
@@ -413,13 +430,23 @@ class PayloadDeployer():
         elif prop == "1 Rating":
             return self.create_select_property(entry["Rate"])
         elif prop == "BNG Current page":
-            return self.create_number_property(entry["Current on"])
+            return self.create_number_property(entry["Currently on"])
         elif prop == "BNG Total pages":
             return self.create_number_property(entry["Total Pages"])
         elif prop == "BNG Number in series":
             return self.create_number_property(entry["Number in Series"])
         elif prop == "BNGCA Owned":
             return self.create_checkbox_property(entry["Owned"])
+        elif prop == "W Current page":
+            return self.create_number_property(entry["Currently on"])
+        elif prop == "W Latest page":
+            return self.create_number_property(entry["Total Pages"])
+        elif prop == "M Current chapter":
+            return self.create_number_property(entry["Currently on"])
+        elif prop == "M Latest chapter":
+            return self.create_number_property(entry["Total Pages"])
+        elif prop == "SP Read?":
+            return self.create_checkbox_property(True if entry["Status"] else False)
         else:
             print(f'Unsupported property name requested: {prop}')
             return None
@@ -478,7 +505,7 @@ class PayloadDeployer():
         number_property = { 'type': 'number', 'number': number_value }
         return number_property
 
-    def create_checkbox_property(self, checkbox_value)
+    def create_checkbox_property(self, checkbox_value):
         """
         Create checkbox property object
         """
